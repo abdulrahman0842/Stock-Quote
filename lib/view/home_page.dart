@@ -1,5 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:stock_quote/core/symbol_list_handler.dart';
+import 'package:provider/provider.dart';
+import 'package:stock_quote/core/widgets/stock_card_widget.dart';
+import '../../provider/symbol_provider.dart';
+import '../../provider/watchlist_provider.dart';
+import '../core/symbol_list_handler.dart';
+import '../service/api_service.dart';
+import 'watchlist_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -9,95 +16,87 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  List<Map<String, dynamic>> _results = [];
-  bool _isLoading = false;
+  Timer? _debounce;
 
-  void _onSearchChanged(String query) async {
-    if (query.isEmpty) {
-      setState(() => _results = []);
-      return;
-    }
-    setState(() => _isLoading = true);
-    final res = await search(query);
-    setState(() {
-      _results = res;
-      _isLoading = false;
+  void _onSearchChanged(String query, SymbolProvider provider) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), () {
+      provider.search(query);
     });
   }
 
-  late List<Map<String, dynamic>> symbols;
   @override
   void initState() {
     super.initState();
-    loadJson();
-  }
-
-  void loadJson() async {
-    symbols = await loadFromJson();
-  }
-
-  Future<List<Map<String, dynamic>>> search(String symbol) async {
-    var filtered = symbols.where((row) {
-      return row['symbol']
-          .toString()
-          .toLowerCase()
-          .contains(symbol.toLowerCase());
-    }).toList();
-    filtered.addAll(symbols.where((row) {
-      return row['name']
-          .toString()
-          .toLowerCase()
-          .contains(symbol.toLowerCase());
-    }).toList());
-    return filtered;
+    ApiService.getSymbolsList();
   }
 
   @override
   Widget build(BuildContext context) {
+    final watchlistProvider = Provider.of<WatchlistProvider>(context);
+
     return Scaffold(
-      appBar: AppBar(title: const Text("Stock Quote")),
-      body: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            TextField(
-              decoration: const InputDecoration(
-                labelText: "Search by symbol or name",
-                border: OutlineInputBorder(),
-              ),
-              onChanged: _onSearchChanged,
+      appBar: AppBar(
+        title: const Text("Stock Quote"),
+        actions: [
+          IconButton(
+              onPressed: () {
+                SymbolHandler.getSymbols();
+              },
+              icon: Icon(Icons.add)),
+          IconButton(
+            icon: Icon(
+              Icons.star,
+              color: Theme.of(context).primaryColor,
             ),
-            const SizedBox(height: 12),
-            if (_isLoading) const LinearProgressIndicator(),
-            if (_results.isEmpty) const Center(child: Text("No Result")),
-            Expanded(
-              child: ListView.builder(
-                itemCount: _results.length,
-                itemBuilder: (context, index) {
-                  final item = _results[index];
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                    child: ListTile(
-                      title: Text(item["name"] ?? ""),
-                      trailing: Text(
-                        item["symbol"] ?? "",
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 15),
-                      ),
-                      onTap: () {
-                        
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text("Selected ${item["symbol"]}")),
-                        );
-                      },
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+            tooltip: "Watchlist",
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const WatchlistPage()),
+              );
+            },
+          ),
+        ],
       ),
+      body: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Consumer<SymbolProvider>(
+              builder: (context, symbolProvider, child) {
+            return Column(
+              children: [
+                TextField(
+                  decoration: InputDecoration(
+                    labelText: "Search by symbol or name",
+                    prefixIcon: const Icon(Icons.search),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onChanged: (val) => _onSearchChanged(val, symbolProvider),
+                ),
+                const SizedBox(height: 12),
+                if (symbolProvider.isLoading) const LinearProgressIndicator(),
+                Expanded(
+                  child: symbolProvider.results.isEmpty
+                      ? const Center(child: Text("No results"))
+                      : ListView.builder(
+                          itemCount: symbolProvider.results.length,
+                          itemBuilder: (context, index) {
+                            final item = symbolProvider.results[index];
+                            final isInWatchlist =
+                                watchlistProvider.isInWatchlist(item);
+
+                            return StockCardWidget(
+                                item: item,
+                                isInWatchlist: isInWatchlist,
+                                watchlistProvider: watchlistProvider);
+                          },
+                        ),
+                ),
+              ],
+            );
+          })),
     );
   }
 }

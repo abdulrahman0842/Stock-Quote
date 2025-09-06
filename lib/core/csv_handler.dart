@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:csv/csv.dart';
 
 Future<List<List<dynamic>>> parseCsv(String csvData) async {
@@ -9,7 +7,6 @@ Future<List<List<dynamic>>> parseCsv(String csvData) async {
 
 Future<List<Map<String, dynamic>>> filterStocks(
     List<List<dynamic>> rows) async {
-  // final headers = rows.first;
   final dataRows = rows.skip(1);
 
   final filtered = dataRows.where((row) {
@@ -18,7 +15,6 @@ Future<List<Map<String, dynamic>>> filterStocks(
     final assetType = row[3];
     return (status == "Active" && exchange == "NASDAQ" && assetType == "Stock");
   });
-  log("FILTERED_SYMBOLS: ${filtered.length}");
   return filtered.map((row) {
     return {"symbol": row[0], "name": row[1], "exchange": row[2]};
   }).toList();
